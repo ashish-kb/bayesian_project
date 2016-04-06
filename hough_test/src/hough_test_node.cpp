@@ -1,3 +1,4 @@
+#include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <ros/ros.h>
@@ -27,10 +28,63 @@ float Xout,Yout;
 float sampling_time=1.0;
 float cutoff_freq=1/0.04;
 float alpha;
-
+geometry_msgs::Pose2D KC;
 
 static const std::string OPENCV_WINDOW = "Image window";
+/*
+// >>>> Kalman Filter
+		    int stateSize = 6;
+		    int measSize = 4;
+		    int contrSize = 0;
 
+		    unsigned int type = CV_32F;
+		    cv::KalmanFilter kf(stateSize, measSize, contrSize, type);
+
+		    cv::Mat state(stateSize, 1, type);  // [x,y,v_x,v_y,w,h]
+		    cv::Mat meas(measSize, 1, type);    // [z_x,z_y,z_w,z_h]
+
+
+		    // Transition State Matrix A
+		    // Note: set dT at each processing step!
+		    // [ 1 0 dT 0  0 0 ]
+		    // [ 0 1 0  dT 0 0 ]
+		    // [ 0 0 1  0  0 0 ]
+		    // [ 0 0 0  1  0 0 ]
+		    // [ 0 0 0  0  1 0 ]
+		    // [ 0 0 0  0  0 1 ]
+		    cv::setIdentity(kf.transitionMatrix);
+
+		    // Measure Matrix H
+		    // [ 1 0 0 0 0 0 ]
+		    // [ 0 1 0 0 0 0 ]
+		    // [ 0 0 0 0 1 0 ]
+		    // [ 0 0 0 0 0 1 ]
+		    kf.measurementMatrix = cv::Mat::zeros(measSize, stateSize, type);
+		    kf.measurementMatrix.at<float>(0) = 1.0f;
+		    kf.measurementMatrix.at<float>(7) = 1.0f;
+		    kf.measurementMatrix.at<float>(16) = 1.0f;
+		    kf.measurementMatrix.at<float>(23) = 1.0f;
+
+		    // Process Noise Covariance Matrix Q
+		    // [ Ex   0   0     0     0    0  ]
+		    // [ 0    Ey  0     0     0    0  ]
+		    // [ 0    0   Ev_x  0     0    0  ]
+		    // [ 0    0   0     Ev_y  0    0  ]
+		    // [ 0    0   0     0     Ew   0  ]
+		    // [ 0    0   0     0     0    Eh ]
+		    //cv::setIdentity(kf.processNoiseCov, cv::Scalar(1e-2));
+		    kf.processNoiseCov.at<float>(0) = 1e-2;
+		    kf.processNoiseCov.at<float>(7) = 1e-2;
+		    kf.processNoiseCov.at<float>(14) = 5.0f;
+		    kf.processNoiseCov.at<float>(21) = 5.0f;
+		    kf.processNoiseCov.at<float>(28) = 1e-2;
+		    kf.processNoiseCov.at<float>(35) = 1e-2;
+
+		    // Measures Noise Covariance Matrix R
+		    cv::setIdentity(kf.measurementNoiseCov, cv::Scalar(1e-1));
+		// <<<< Kalman Filter
+
+*/
 class codebridge
 {
 	ros::NodeHandle nh_;
@@ -40,6 +94,7 @@ class codebridge
 	geometry_msgs::Pose2D vanish_point;
 	ros::Publisher vanish_pub;
 	cv::VideoWriter writer_vanish;
+	ros::Subscriber center_kalman;
 
 
 public:
@@ -48,8 +103,8 @@ public:
 		       // Subscrive to input video feed and publish output video feed
 		       image_sub_ = it_.subscribe("/ardrone/bottom/image_raw", 1,&codebridge::imageCb, this);
 		       vanish_pub = nh_.advertise<geometry_msgs::Pose2D>("/vanishing_point", 1);
-
-		       //image_pub_ = it_.advertise("/codebridge/output_video", 1);
+		       center_kalman = nh_.subscribe("/corrected_centers",1,&codebridge::kalmanread,this);
+		      //image_pub_ = it_.advertise("/codebridge/output_video", 1);
 		       cv::namedWindow(OPENCV_WINDOW);
 		    }
 
@@ -57,6 +112,13 @@ public:
 	     {
 	       cv::destroyWindow(OPENCV_WINDOW);
 	     }
+
+	void kalmanread(const geometry_msgs::Pose2D& msg)
+	{
+		KC.x = msg.x;
+		KC.y = msg.y;
+
+	}
 
 	void imageCb(const sensor_msgs::ImageConstPtr& msg)
 	{
@@ -90,6 +152,20 @@ public:
 
 		The_Vid=cv_ptr->image.clone();
 
+/*
+		    double ticks = 0;
+		    bool found = false;
+
+		    int notFoundCount = 0;
+
+	        double precTick = ticks;
+	        ticks = (double) cv::getTickCount();
+
+	        double dT = (ticks - precTick) / cv::getTickFrequency(); //seconds
+
+	        cout<<"***************************dT"<<dt<<'\n';
+	        */
+
 		//IMAGE SHARPENING
 		//GaussianBlur( cv_ptr->image,cv_ptr-> image, Size( 3, 3 ), 0, 0 );
 		GaussianBlur( cv_ptr->image,cv_ptr-> image, Size( 0,0 ), 3 , 3);
@@ -98,11 +174,9 @@ public:
 
 		//cv::imshow(OPENCV_WINDOW, cv_ptr->image);
 		vector<Vec3f> circles;
-		vector<float> distance;
+
 		/// Apply the Hough Transform to find the circles
 		HoughCircles( gra, circles, CV_HOUGH_GRADIENT, 1, 8, 200, 20, 0, 20);
-
-
 		if(circles.size()== 1)
 		{
 			//cout << "Number of circles: " << circles.size() << '\n';
@@ -113,13 +187,25 @@ public:
 			vanish_point.x  = center.x;
 			vanish_point.y  = center.y;
 			vanish_pub.publish(vanish_point);
+
 			//cout<<"loop iterator"<<i<<'\n';
 			cout<<"center:" <<center<<'\n';
-			//cout<<"radius"<<radius<<'\n';
+			cout<<"radius"<<radius<<'\n';
+			Point kCx = (Point)KC.x;
+			Point kCy = (Point)KC.y;
+			cout<<"kCx"<<kCx<<'\n';
+			cout<<"kCy"<<kCy<<'\n';
+
 			// circle center
 			circle( cv_ptr->image, center, 3, Scalar(0,255,0), -1, 8, 0 );
 			// circle outline
 			circle( cv_ptr->image, center, radius, Scalar(0,0,255), 3, 8, 0 );
+
+
+			// Kalman circle center
+			circle( cv_ptr->image,Point(KC.y,KC.x), 3, Scalar(255,0,0), -1, 8, 0 );
+			// circle outline
+			circle( cv_ptr->image,Point(KC.y,KC.x), radius, Scalar(0,255,0), 3, 8, 0 );
 
 			Mat dst, dst_norm, dst_norm_scaled;
 			dst = Mat::zeros( gra.size(), CV_32FC1 );
@@ -131,15 +217,15 @@ public:
 			int thresh = 200;*/
 			/// Parameters for Shi-Tomasi algorithm
 			vector<Point2f> corners;
-			double qualityLevel = 0.01;
-			double minDistance = 10;
-			int blockSize = 3;
+			double qualityLevel = 0.0001;
+			double minDistance = 5;
+			int blockSize = 10;
 			bool useHarrisDetector = false;
-			double k = 0.04;
+			double k = 0.4;
 			int maxCorners = 10;
 			/// Apply corner detection
 			goodFeaturesToTrack( gra,corners,maxCorners,qualityLevel,minDistance,Mat(),blockSize,useHarrisDetector,k );
-			cout<<"Number of corners detected: "<<corners.size()<<endl;
+			//cout<<"Number of corners detected: "<<corners.size()<<endl;
 			/*
 			/// Detecting corners
 			cornerHarris( gra, dst, blockSize, apertureSize, k, BORDER_DEFAULT );
@@ -157,21 +243,87 @@ public:
 			             }
 			       }
 			    }*/
-			int r = 4;
+			int r = 4,xdiff,ydiff;
+			float distance, ratio;
+			vector<Point2f> goodCorners;
+			vector<float> distances,ratios;
 
 			for( int i = 0; i < corners.size(); i++ )
 			{
-				  circle( cv_ptr->image, corners[i], r, Scalar(0), -1, 8, 0 );
-				  cout<<"Corners: "<<corners[i]<<'\n';
-				  cout<<"corner x: "<<corners[i].x<<'\n';
-				  cout<<"corner y: "<<corners[i].y<<'\n';
+				  //circle( cv_ptr->image, corners[i], r, Scalar(0), -1, 8, 0 );
 
-
-
+				  //cout<<"corner x: "<<corners[i].x<<'\n';
+				  //cout<<"corner y: "<<corners[i].y<<'\n';
+				  xdiff = pow((corners[i].x - center.x),2);
+				  ydiff = pow((corners[i].y - center.y),2);
+				  //cout<<"xdiff"<<xdiff<<'\n';
+				  //cout<<"ydiff"<<ydiff<<'\n';
+				  distance = sqrt(xdiff + ydiff);
+				  if (distance <= (radius+5))
+				  {
+					  //goodCorners[i].x = corners[i].x;
+					  //goodCorners[i].y = corners[i].y;
+					  distances.push_back(distance);
+					  //goodCorners.push_back(corners[i]);
+					  circle( cv_ptr->image, corners[i], r, Scalar(0), -1, 8, 0 );
+					  cout<<"Corners: "<<corners[i]<<'\n';
+				  }
 				  //distance[i] = sqrt(pow((corners[i].x - center.x),2) + pow((corners[i].y - center.y),2));
 				  //cout<<"distance from center : "<<distance[i]<<'\n';
 			}
+			//cout<<"Good corners size"<<goodCorners.size()<<'\n';
 
+			// print out content:
+			cout << "distances:";
+			for (vector<float>::iterator it1=distances.begin(); it1!=distances.end(); ++it1)
+			{
+				cout << ' ' << *it1;
+			}
+			cout << '\n';
+			//for (vector<float>::iterator it2=distances.begin(); it2!=distances.end(); ++it2)
+			for(int j= 0;j<=distances.size();j++)
+			{
+				ratio = radius/ distances[j];
+				if (ratio<1.8)
+				{
+					ratios.push_back(ratio);
+					goodCorners.push_back(corners[j]);
+				}
+
+
+
+			}
+			cout<<"****goodCorners"<<goodCorners.size()<<'\n';
+			cout<<"ratios";
+			for (vector<float>::iterator it3=ratios.begin(); it3!=ratios.end(); ++it3)
+			{
+				cout<<' '<<*it3;
+			}
+			cout<<'\n';
+
+			//if(goodCorners.size()>3)
+						//{
+			/*
+			float cameraMatrix[3][3]=
+				{{700.490828918144, 0, 319.508832099787},
+				{0, 701.654116650887, 218.740253550967},
+				{ 0, 0, 1}};
+			vector<Point3f>objectPoints;
+			vector<Point2f>imagePoints;
+			objectPoints.push_back(cv::Point3f(0., 0.,0.));
+			//objectPoints.push_back(cv::Point3f(-0.5,0.5,0.));
+			//objectPoints.push_back(cv::Point3f(0.5,0.5,0.));
+			//objectPoints.push_back(cv::Point3f(-0.5,-0.5,0.));
+			imagePoints.push_back(center);
+			//imagePoints.push_back(first);
+			//imagePoints.push_back(second);
+			//imagePoints.push_back(third);
+			cv::Mat rvec(1,3,cv::DataType<double>::type);
+			cv::Mat tvec(1,3,cv::DataType<double>::type);
+			vector<float> distCoeffs = {0.0182389759532889, 0.0520276742502367, 0.00651075732801101, 0.000183496184521575, 0};
+			solvePnP(objectPoints,imagePoints,cameraMatrix, InputArray distCoeffs, OutputArray rvec, OutputArray tvec, bool useExtrinsicGuess=false, int flags=ITERATIVE )
+			//}
+			  */
 
 		}
 
