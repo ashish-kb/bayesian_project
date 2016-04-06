@@ -26,12 +26,13 @@ def applyKalman():
     print(init_y)
     dt = 0.079
     p = rospy.Publisher("/corrected_centers", Pose2D)
+    p2 = rospy.Publisher("/measured_centers", Pose2D)
     # Initialization of state matrices 
     X = np.array([[init_y], [init_x],[1],[1]])
     #print(X.shape)
     P = diag((0.01, 0.01, 0.0, 0.0)) 
     A = np.array([[1,0,dt,0], [0,1,0,dt],[0,0,1,0],[0,0,0,1]]) 
-    Q = diag((1, 1, 0.0, 0.0))
+    Q = diag((1, 1, 1, 1))
     B = eye(X.shape[0]) 
     U = zeros((X.shape[0],1))
      
@@ -39,19 +40,20 @@ def applyKalman():
 
     Y = array([[X[0,0] + abs(np.random.randn(1)[0])], [X[1,0] +abs(np.random.randn(1)[0])]]) 
     H = array([[1, 0, 0, 0], [0, 1, 0, 0]]) 
-    R = eye(Y.shape[0]) 
-
-    # Number of iterations in Kalman Filter
-    N_iter = 10000 
+    R = diag((0.5,0.5)) 
 
     # Applying the Kalman Filter 
-    for i in arange(0, N_iter): 
-        (X, P) = kf_predict(X, P, A, Q, B, U) 
-        (X, P, K, IM, IS, LH) = kf_update(X, P, Y, H, R) 
+    while(True): 
+        (X, P) = kf_predict(X, P, A, Q, B, U)
         msg = rospy.wait_for_message("/vanishing_point", Pose2D)
         m_x = msg.x
         m_y = msg.y
-        Y = array([[m_y],[m_x]]) 
+        Y = array([[m_y],[m_x]])
+        (X, P, K, IM, IS, LH) = kf_update(X, P, Y, H, R) 
+        
+        print("Y values")
+        print(Y)
+        print("X values")
         print(X)
         center = Pose2D()
         center.x = X[1,0]
