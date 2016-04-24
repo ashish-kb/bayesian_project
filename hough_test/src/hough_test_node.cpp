@@ -15,6 +15,7 @@ using namespace std;
 int hough_slider_max=200;
 int canny1_slider_max=200;
 int canny2_slider_max=500;
+int flag = 0;
 
 int Hough_slider=60;
 int CannyThres1=115;
@@ -31,60 +32,7 @@ float alpha;
 geometry_msgs::Pose2D KC;
 
 static const std::string OPENCV_WINDOW = "Image window";
-/*
-// >>>> Kalman Filter
-		    int stateSize = 6;
-		    int measSize = 4;
-		    int contrSize = 0;
 
-		    unsigned int type = CV_32F;
-		    cv::KalmanFilter kf(stateSize, measSize, contrSize, type);
-
-		    cv::Mat state(stateSize, 1, type);  // [x,y,v_x,v_y,w,h]
-		    cv::Mat meas(measSize, 1, type);    // [z_x,z_y,z_w,z_h]
-
-
-		    // Transition State Matrix A
-		    // Note: set dT at each processing step!
-		    // [ 1 0 dT 0  0 0 ]
-		    // [ 0 1 0  dT 0 0 ]
-		    // [ 0 0 1  0  0 0 ]
-		    // [ 0 0 0  1  0 0 ]
-		    // [ 0 0 0  0  1 0 ]
-		    // [ 0 0 0  0  0 1 ]
-		    cv::setIdentity(kf.transitionMatrix);
-
-		    // Measure Matrix H
-		    // [ 1 0 0 0 0 0 ]
-		    // [ 0 1 0 0 0 0 ]
-		    // [ 0 0 0 0 1 0 ]
-		    // [ 0 0 0 0 0 1 ]
-		    kf.measurementMatrix = cv::Mat::zeros(measSize, stateSize, type);
-		    kf.measurementMatrix.at<float>(0) = 1.0f;
-		    kf.measurementMatrix.at<float>(7) = 1.0f;
-		    kf.measurementMatrix.at<float>(16) = 1.0f;
-		    kf.measurementMatrix.at<float>(23) = 1.0f;
-
-		    // Process Noise Covariance Matrix Q
-		    // [ Ex   0   0     0     0    0  ]
-		    // [ 0    Ey  0     0     0    0  ]
-		    // [ 0    0   Ev_x  0     0    0  ]
-		    // [ 0    0   0     Ev_y  0    0  ]
-		    // [ 0    0   0     0     Ew   0  ]
-		    // [ 0    0   0     0     0    Eh ]
-		    //cv::setIdentity(kf.processNoiseCov, cv::Scalar(1e-2));
-		    kf.processNoiseCov.at<float>(0) = 1e-2;
-		    kf.processNoiseCov.at<float>(7) = 1e-2;
-		    kf.processNoiseCov.at<float>(14) = 5.0f;
-		    kf.processNoiseCov.at<float>(21) = 5.0f;
-		    kf.processNoiseCov.at<float>(28) = 1e-2;
-		    kf.processNoiseCov.at<float>(35) = 1e-2;
-
-		    // Measures Noise Covariance Matrix R
-		    cv::setIdentity(kf.measurementNoiseCov, cv::Scalar(1e-1));
-		// <<<< Kalman Filter
-
-*/
 class codebridge
 {
 	ros::NodeHandle nh_;
@@ -106,11 +54,13 @@ public:
 		       center_kalman = nh_.subscribe("/corrected_centers",1,&codebridge::kalmanread,this);
 		      //image_pub_ = it_.advertise("/codebridge/output_video", 1);
 		       cv::namedWindow(OPENCV_WINDOW);
+			   cv::namedWindow("HSLImage");
 		    }
 
 	~codebridge()
 	     {
 	       cv::destroyWindow(OPENCV_WINDOW);
+		   cv::destroyWindow("HSLImage");
 	     }
 
 	void kalmanread(const geometry_msgs::Pose2D& msg)
@@ -119,6 +69,7 @@ public:
 		KC.y = msg.y;
 
 	}
+
 
 	void imageCb(const sensor_msgs::ImageConstPtr& msg)
 	{
@@ -148,9 +99,9 @@ public:
 		 }
 
 
-		Mat gra,The_Vid;
+		Mat gra,hsv, The_Vid;
 
-		The_Vid=cv_ptr->image.clone();
+		The_Vid = cv_ptr->image.clone();
 
 /*
 		    double ticks = 0;
@@ -170,13 +121,91 @@ public:
 		//GaussianBlur( cv_ptr->image,cv_ptr-> image, Size( 3, 3 ), 0, 0 );
 		GaussianBlur( cv_ptr->image,cv_ptr-> image, Size( 0,0 ), 3 , 3);
 		addWeighted( The_Vid, 1.5,  cv_ptr->image, -0.5, 0, cv_ptr->image);
-		cvtColor( cv_ptr->image, gra, CV_BGR2GRAY );
 
-		//cv::imshow(OPENCV_WINDOW, cv_ptr->image);
+		cvtColor( cv_ptr->image, gra, CV_BGR2GRAY );
+		//equalizeHist(gra,gra);
+		// cvNormalize function call to apply linear stretch
+	//	cv::normalize(gra, gra, 0, 255, NORM_MINMAX);
+		cvtColor( cv_ptr->image, hsv, CV_BGR2HSV );
+		cv::inRange(hsv, cv::Scalar(0, 0, 220, 0), cv::Scalar(180, 255, 255, 0), hsv);
+		// Create a structuring element (SE)
+		//int morph_size = 10;
+		//Mat element = getStructuringElement( MORPH_RECT, Size( 2*morph_size + 1, 2*morph_size+1 ), Point( morph_size, morph_size ) );
+		//morphologyEx( hsv, hsv, MORPH_OPEN, element );
+
+		Mat conImg;
+		conImg = hsv.clone();
+		vector<vector<Point> > contours,biggestContour;
+		vector<Vec4i> hierarchy;
+		vector<float> areas;
+		int largest_area=0;
+		int largest_contour_index=0;
+		Rect bounding_rect;
+		findContours( conImg, contours, hierarchy,CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0,0));
+
+        /*/cout<<"numContours = "<<contours.size()<<'\n';
+        /for(int i5 = 0; i5 < contours.size(); i5++ )
+        {
+        	areas.push_back(contourArea(contours[i5]));
+        	vector<Point> approx;
+        	//approxPolyDP(contours[i5], approx, 5, true);
+        	//double area1 = contourArea(approx);
+
+        	//"area1 =" << area1 << endl <<
+        	cout<<"area: "<<contourArea(contours[i5]);
+         }*/
+		 for( int i = 0; i< contours.size(); i++ ) // iterate through each contour.
+		 {
+			 double a=contourArea( contours[i],false);  //  Find the area of contour
+			 if(a>largest_area)
+			 {
+		       largest_area=a;
+		       largest_contour_index=i;                //Store the index of largest contour
+		       bounding_rect=boundingRect(contours[i]); // Find the bounding rectangle for biggest contour
+			 }
+
+		 }
+
+        if(largest_area > 8000)
+        {
+        	drawContours( cv_ptr->image, contours,largest_contour_index , Scalar(0,0,255), 3, 8, hierarchy,0 );
+        	cout<<"largestArea: "<<largest_area<<'\n';
+        	Moments mu;
+        	mu = moments( contours[largest_contour_index], false );
+        	///  Get the mass centers:
+        	Point2f mc;
+        	mc = Point2f( mu.m10/mu.m00 , mu.m01/mu.m00 );
+        	circle( cv_ptr->image,mc, 3, Scalar(255,0,0), -1, 8, 0 );
+        	//cout<<"cntr points"<<contours[largest_contour_index]<<'\n';
+        	vanish_point.x  = mc.x;
+        	vanish_point.y  = mc.y;
+    		vanish_pub.publish(vanish_point);
+        }
+		// grab contours
+		//biggestContour = contours[contours.size()-1];
+        /// Get the moments
+
+		cv::imshow("HSLImage", hsv);
 		vector<Vec3f> circles;
 
+
+
 		/// Apply the Hough Transform to find the circles
-		HoughCircles( gra, circles, CV_HOUGH_GRADIENT, 1, 8, 200, 20, 0, 20);
+		HoughCircles( gra, circles, CV_HOUGH_GRADIENT, 1, 8, 200, 40, 0, 0);
+//void HoughCircles(InputArray image, OutputArray circles, int method, double dp, double minDist, double param1=100, double param2=100, int minRadius=0, int maxRadius=0 )
+		/*
+		 Parameters:
+image – 8-bit, single-channel, grayscale input image.
+circles – Output vector of found circles. Each vector is encoded as a 3-element floating-point vector (x, y, radius) .
+circle_storage – In C function this is a memory storage that will contain the output sequence of found circles.
+method – Detection method to use. Currently, the only implemented method is CV_HOUGH_GRADIENT , which is basically 21HT , described in [Yuen90].
+dp – Inverse ratio of the accumulator resolution to the image resolution. For example, if dp=1 , the accumulator has the same resolution as the input image. If dp=2 , the accumulator has half as big width and height.
+minDist – Minimum distance between the centers of the detected circles. If the parameter is too small, multiple neighbor circles may be falsely detected in addition to a true one. If it is too large, some circles may be missed.
+param1 – First method-specific parameter. In case of CV_HOUGH_GRADIENT , it is the higher threshold of the two passed to the Canny() edge detector (the lower one is twice smaller).
+param2 – Second method-specific parameter. In case of CV_HOUGH_GRADIENT , it is the accumulator threshold for the circle centers at the detection stage. The smaller it is, the more false circles may be detected. Circles, corresponding to the larger accumulator values, will be returned first.
+minRadius – Minimum circle radius.
+maxRadius – Maximum circle radius.
+		 */
 		if(circles.size()== 1)
 		{
 			//cout << "Number of circles: " << circles.size() << '\n';
@@ -184,9 +213,9 @@ public:
 			Point center(cvRound(circles[0][0]),cvRound(circles[0][1]));
 			int radius = cvRound(circles[0][2]);
 
-			vanish_point.x  = center.x;
-			vanish_point.y  = center.y;
-			vanish_pub.publish(vanish_point);
+			//vanish_point.x  = center.x;
+			//vanish_point.y  = center.y;
+			//vanish_pub.publish(vanish_point);
 
 			//cout<<"loop iterator"<<i<<'\n';
 			cout<<"center:" <<center<<'\n';
@@ -197,27 +226,26 @@ public:
 			cout<<"kCy"<<kCy<<'\n';
 
 			// circle center
-			circle( cv_ptr->image, center, 3, Scalar(0,255,0), -1, 8, 0 );
+			//circle( cv_ptr->image, center, 3, Scalar(0,255,0), -1, 8, 0 );
 			// circle outline
-			circle( cv_ptr->image, center, radius, Scalar(0,0,255), 3, 8, 0 );
-
+			//circle( cv_ptr->image, center, radius, Scalar(0,0,255), 3, 8, 0 );
 
 			// Kalman circle center
-			circle( cv_ptr->image,Point(KC.y,KC.x), 3, Scalar(255,0,0), -1, 8, 0 );
+			//circle( cv_ptr->image,Point(KC.y,KC.x), 3, Scalar(255,0,0), -1, 8, 0 );
 			// circle outline
-			circle( cv_ptr->image,Point(KC.y,KC.x), radius, Scalar(0,255,0), 3, 8, 0 );
+			//circle( cv_ptr->image,Point(KC.y,KC.x), 5, Scalar(0,255,0), -1, 8, 0 );
 
 			Mat dst, dst_norm, dst_norm_scaled;
 			dst = Mat::zeros( gra.size(), CV_32FC1 );
 
 			/// Detector parameters
-			/* int blockSize = 2;
-			int apertureSize = 3;
-			double k = 0.04;
-			int thresh = 200;*/
+			//int blockSize = 2;
+			//int apertureSize = 3;
+			//double k = 0.04;
+			int thresh = 200;
 			/// Parameters for Shi-Tomasi algorithm
 			vector<Point2f> corners;
-			double qualityLevel = 0.0001;
+			double qualityLevel = 0.01;
 			double minDistance = 5;
 			int blockSize = 10;
 			bool useHarrisDetector = false;
@@ -226,24 +254,24 @@ public:
 			/// Apply corner detection
 			goodFeaturesToTrack( gra,corners,maxCorners,qualityLevel,minDistance,Mat(),blockSize,useHarrisDetector,k );
 			//cout<<"Number of corners detected: "<<corners.size()<<endl;
-			/*
+
 			/// Detecting corners
-			cornerHarris( gra, dst, blockSize, apertureSize, k, BORDER_DEFAULT );
+			//cornerHarris( gra, dst, blockSize, apertureSize, k, BORDER_DEFAULT );
 			//cout<<"number of corners: "<<dst.size()<<'\n';
 			/// Normalizing
 			normalize( dst, dst_norm, 0, 255, NORM_MINMAX, CV_32FC1, Mat() );
 			convertScaleAbs( dst_norm, dst_norm_scaled );
 		  	/// Drawing a circle around corners
-			for( int j = 0; j < dst_norm.rows ; j++ )
-			   { for( int i = 0; i < dst_norm.cols; i++ )
-			       {
-			           if( (int) dst_norm.at<float>(j,i) > thresh )
-			             {
-			               circle( cv_ptr->image, Point( i, j ), 5,  Scalar(0), 2, 8, 0 );
-			             }
-			       }
-			    }*/
-			int r = 4,xdiff,ydiff;
+			//for( int j = 0; j < dst_norm.rows ; j++ )
+			  // { for( int i = 0; i < dst_norm.cols; i++ )
+			    //   {
+			      //     if( (int) dst_norm.at<float>(j,i) > thresh )
+			        //     {
+			          //     circle( cv_ptr->image, Point( i, j ), 5,  Scalar(0), 2, 8, 0 );
+			            // }
+			       //}
+			    //}
+/*			int r = 4,xdiff,ydiff;
 			float distance, ratio;
 			vector<Point2f> goodCorners;
 			vector<float> distances,ratios;
@@ -265,16 +293,17 @@ public:
 					  //goodCorners[i].y = corners[i].y;
 					  distances.push_back(distance);
 					  //goodCorners.push_back(corners[i]);
+					  //show corners
 					  circle( cv_ptr->image, corners[i], r, Scalar(0), -1, 8, 0 );
 					  cout<<"Corners: "<<corners[i]<<'\n';
 				  }
 				  //distance[i] = sqrt(pow((corners[i].x - center.x),2) + pow((corners[i].y - center.y),2));
 				  //cout<<"distance from center : "<<distance[i]<<'\n';
-			}
+			}*/
 			//cout<<"Good corners size"<<goodCorners.size()<<'\n';
 
 			// print out content:
-			cout << "distances:";
+			/*cout << "distances:";
 			for (vector<float>::iterator it1=distances.begin(); it1!=distances.end(); ++it1)
 			{
 				cout << ' ' << *it1;
@@ -300,6 +329,13 @@ public:
 				cout<<' '<<*it3;
 			}
 			cout<<'\n';
+			if(goodCorners.size()==3)
+			{
+				flag = flag + 1;
+			}
+
+*/
+
 
 			//if(goodCorners.size()>3)
 						//{
@@ -326,6 +362,7 @@ public:
 			  */
 
 		}
+
 
 		 cv::imshow(OPENCV_WINDOW,cv_ptr->image);
 		 cv::waitKey(3);
@@ -738,9 +775,11 @@ if(ct>2)
 
 int main(int argc, char** argv)
 {
+
 	 ros::init(argc, argv, "hough_test");
 	 codebridge ic;
 	 ros::spin();
+	 cout<<"number of goodC 3"<<flag<<'\n';
 	 return 0;
 }
 
