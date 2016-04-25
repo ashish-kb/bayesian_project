@@ -13,11 +13,13 @@ using namespace cv;
 using namespace std;
 
 int hough_slider_max=200;
+int v_slider_max = 255;
 int canny1_slider_max=200;
 int canny2_slider_max=500;
 int flag = 0;
 
 int Hough_slider=60;
+int v_slider = 220;
 int CannyThres1=115;
 int CannyThres2=210;
 int first_image_frame=1;
@@ -127,7 +129,12 @@ public:
 		// cvNormalize function call to apply linear stretch
 	//	cv::normalize(gra, gra, 0, 255, NORM_MINMAX);
 		cvtColor( cv_ptr->image, hsv, CV_BGR2HSV );
-		cv::inRange(hsv, cv::Scalar(0, 0, 220, 0), cv::Scalar(180, 255, 255, 0), hsv);
+		////trackbar
+		namedWindow("Manual Tuning", 1);
+		createTrackbar( "HSV", "Manual Tuning", &v_slider, v_slider_max);
+
+		waitKey(3);
+		cv::inRange(hsv, cv::Scalar(0, 0, v_slider, 0), cv::Scalar(180, 255, 255, 0), hsv);
 		// Create a structuring element (SE)
 		//int morph_size = 10;
 		//Mat element = getStructuringElement( MORPH_RECT, Size( 2*morph_size + 1, 2*morph_size+1 ), Point( morph_size, morph_size ) );
@@ -191,7 +198,7 @@ public:
 
 
 		/// Apply the Hough Transform to find the circles
-		HoughCircles( gra, circles, CV_HOUGH_GRADIENT, 1, 8, 200, 40, 0, 0);
+		HoughCircles( gra, circles, CV_HOUGH_GRADIENT, 1, 50, 200, 30, 0, 0);
 //void HoughCircles(InputArray image, OutputArray circles, int method, double dp, double minDist, double param1=100, double param2=100, int minRadius=0, int maxRadius=0 )
 		/*
 		 Parameters:
@@ -228,7 +235,7 @@ maxRadius – Maximum circle radius.
 			// circle center
 			//circle( cv_ptr->image, center, 3, Scalar(0,255,0), -1, 8, 0 );
 			// circle outline
-			//circle( cv_ptr->image, center, radius, Scalar(0,0,255), 3, 8, 0 );
+			circle( cv_ptr->image, center, radius, Scalar(0,255,0), 3, 8, 0 );
 
 			// Kalman circle center
 			//circle( cv_ptr->image,Point(KC.y,KC.x), 3, Scalar(255,0,0), -1, 8, 0 );
