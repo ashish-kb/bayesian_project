@@ -12,14 +12,16 @@
 using namespace cv;
 using namespace std;
 
-int hough_slider_max=200;
+int hough_slider_max=250;
 int v_slider_max = 255;
+int center_slider_max = 100;
 int canny1_slider_max=200;
 int canny2_slider_max=500;
 int flag = 0;
 
-int Hough_slider=60;
+int Hough_slider=150;
 int v_slider = 220;
+int center_slider = 5;
 int CannyThres1=115;
 int CannyThres2=210;
 int first_image_frame=1;
@@ -194,11 +196,11 @@ public:
 
 		cv::imshow("HSLImage", hsv);
 		vector<Vec3f> circles;
-
-
+		createTrackbar( "Canny edge", "Manual Tuning", &Hough_slider, hough_slider_max);
+		createTrackbar( "Center Detection", "Manual Tuning", &center_slider, center_slider_max);
 
 		/// Apply the Hough Transform to find the circles
-		HoughCircles( gra, circles, CV_HOUGH_GRADIENT, 1, 50, 200, 30, 0, 0);
+		HoughCircles( gra, circles, CV_HOUGH_GRADIENT, 1, 50, Hough_slider,center_slider, 0, 0);
 //void HoughCircles(InputArray image, OutputArray circles, int method, double dp, double minDist, double param1=100, double param2=100, int minRadius=0, int maxRadius=0 )
 		/*
 		 Parameters:
