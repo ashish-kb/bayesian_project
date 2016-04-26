@@ -19,9 +19,9 @@ int canny1_slider_max=200;
 int canny2_slider_max=500;
 int flag = 0;
 
-int Hough_slider=150;
-int v_slider = 220;
-int center_slider = 5;
+int Hough_slider=120;
+int v_slider = 182;
+int center_slider = 60;
 int CannyThres1=115;
 int CannyThres2=210;
 int first_image_frame=1;
@@ -125,7 +125,7 @@ public:
 		//GaussianBlur( cv_ptr->image,cv_ptr-> image, Size( 3, 3 ), 0, 0 );
 		GaussianBlur( cv_ptr->image,cv_ptr-> image, Size( 0,0 ), 3 , 3);
 		addWeighted( The_Vid, 1.5,  cv_ptr->image, -0.5, 0, cv_ptr->image);
-
+		normalize( cv_ptr->image, cv_ptr->image, 0, 255, NORM_MINMAX, -1, Mat() );
 		cvtColor( cv_ptr->image, gra, CV_BGR2GRAY );
 		//equalizeHist(gra,gra);
 		// cvNormalize function call to apply linear stretch
@@ -268,8 +268,8 @@ maxRadius – Maximum circle radius.
 			//cornerHarris( gra, dst, blockSize, apertureSize, k, BORDER_DEFAULT );
 			//cout<<"number of corners: "<<dst.size()<<'\n';
 			/// Normalizing
-			normalize( dst, dst_norm, 0, 255, NORM_MINMAX, CV_32FC1, Mat() );
-			convertScaleAbs( dst_norm, dst_norm_scaled );
+			//normalize( dst, dst_norm, 0, 255, NORM_MINMAX, CV_32FC1, Mat() );
+			//convertScaleAbs( dst_norm, dst_norm_scaled );
 		  	/// Drawing a circle around corners
 			//for( int j = 0; j < dst_norm.rows ; j++ )
 			  // { for( int i = 0; i < dst_norm.cols; i++ )
