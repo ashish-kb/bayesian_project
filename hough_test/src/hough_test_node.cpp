@@ -104,8 +104,8 @@ public:
 
 
 		Mat gra,hsv, The_Vid;
-
 		The_Vid = cv_ptr->image.clone();
+		int flag_whiteBlob = 0;
 
 /*
 		    double ticks = 0;
@@ -142,59 +142,6 @@ public:
 		//Mat element = getStructuringElement( MORPH_RECT, Size( 2*morph_size + 1, 2*morph_size+1 ), Point( morph_size, morph_size ) );
 		//morphologyEx( hsv, hsv, MORPH_OPEN, element );
 
-		Mat conImg;
-		conImg = hsv.clone();
-		vector<vector<Point> > contours,biggestContour;
-		vector<Vec4i> hierarchy;
-		vector<float> areas;
-		int largest_area=0;
-		int largest_contour_index=0;
-		Rect bounding_rect;
-		findContours( conImg, contours, hierarchy,CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0,0));
-
-        /*/cout<<"numContours = "<<contours.size()<<'\n';
-        /for(int i5 = 0; i5 < contours.size(); i5++ )
-        {
-        	areas.push_back(contourArea(contours[i5]));
-        	vector<Point> approx;
-        	//approxPolyDP(contours[i5], approx, 5, true);
-        	//double area1 = contourArea(approx);
-
-        	//"area1 =" << area1 << endl <<
-        	cout<<"area: "<<contourArea(contours[i5]);
-         }*/
-		 for( int i = 0; i< contours.size(); i++ ) // iterate through each contour.
-		 {
-			 double a=contourArea( contours[i],false);  //  Find the area of contour
-			 if(a>largest_area)
-			 {
-		       largest_area=a;
-		       largest_contour_index=i;                //Store the index of largest contour
-		       bounding_rect=boundingRect(contours[i]); // Find the bounding rectangle for biggest contour
-			 }
-
-		 }
-
-        if(largest_area > 8000)
-        {
-        	drawContours( cv_ptr->image, contours,largest_contour_index , Scalar(0,0,255), 3, 8, hierarchy,0 );
-        	cout<<"largestArea: "<<largest_area<<'\n';
-        	Moments mu;
-        	mu = moments( contours[largest_contour_index], false );
-        	///  Get the mass centers:
-        	Point2f mc;
-        	mc = Point2f( mu.m10/mu.m00 , mu.m01/mu.m00 );
-        	circle( cv_ptr->image,mc, 3, Scalar(255,0,0), -1, 8, 0 );
-        	//cout<<"cntr points"<<contours[largest_contour_index]<<'\n';
-        	vanish_point.x  = mc.x;
-        	vanish_point.y  = mc.y;
-    		vanish_pub.publish(vanish_point);
-        }
-		// grab contours
-		//biggestContour = contours[contours.size()-1];
-        /// Get the moments
-
-		cv::imshow("HSLImage", hsv);
 		vector<Vec3f> circles;
 		createTrackbar( "Canny edge", "Manual Tuning", &Hough_slider, hough_slider_max);
 		createTrackbar( "Center Detection", "Manual Tuning", &center_slider, center_slider_max);
@@ -222,10 +169,10 @@ maxRadius – Maximum circle radius.
 			Point center(cvRound(circles[0][0]),cvRound(circles[0][1]));
 			int radius = cvRound(circles[0][2]);
 
-			//vanish_point.x  = center.x;
-			//vanish_point.y  = center.y;
-			//vanish_pub.publish(vanish_point);
-
+			vanish_point.x  = center.x;
+			vanish_point.y  = center.y;
+			vanish_pub.publish(vanish_point);
+            flag_whiteBlob = 1;
 			//cout<<"loop iterator"<<i<<'\n';
 			cout<<"center:" <<center<<'\n';
 			cout<<"radius"<<radius<<'\n';
@@ -371,6 +318,64 @@ maxRadius – Maximum circle radius.
 			  */
 
 		}
+		Mat conImg;
+				conImg = hsv.clone();
+				vector<vector<Point> > contours,biggestContour;
+				vector<Vec4i> hierarchy;
+				vector<float> areas;
+				int largest_area=0;
+				int largest_contour_index=0;
+				Rect bounding_rect;
+
+				findContours( conImg, contours, hierarchy,CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0,0));
+
+		        /*/cout<<"numContours = "<<contours.size()<<'\n';
+		        /for(int i5 = 0; i5 < contours.size(); i5++ )
+		        {
+		        	areas.push_back(contourArea(contours[i5]));
+		        	vector<Point> approx;
+		        	//approxPolyDP(contours[i5], approx, 5, true);
+		        	//double area1 = contourArea(approx);
+
+		        	//"area1 =" << area1 << endl <<
+		        	cout<<"area: "<<contourArea(contours[i5]);
+		         }*/
+				 for( int i = 0; i< contours.size(); i++ ) // iterate through each contour.
+				 {
+					 double a=contourArea( contours[i],false);  //  Find the area of contour
+					 if(a>largest_area)
+					 {
+				       largest_area=a;
+				       largest_contour_index=i;                //Store the index of largest contour
+				       bounding_rect=boundingRect(contours[i]); // Find the bounding rectangle for biggest contour
+					 }
+
+				 }
+
+		        if(largest_area > 8000)
+		        {
+		        	drawContours( cv_ptr->image, contours,largest_contour_index , Scalar(0,0,255), 3, 8, hierarchy,0 );
+		        	cout<<"largestArea: "<<largest_area<<'\n';
+		        	Moments mu;
+		        	mu = moments( contours[largest_contour_index], false );
+		        	///  Get the mass centers:
+		        	Point2f mc;
+		        	mc = Point2f( mu.m10/mu.m00 , mu.m01/mu.m00 );
+		        	circle( cv_ptr->image,mc, 3, Scalar(255,0,0), -1, 8, 0 );
+		        	//cout<<"cntr points"<<contours[largest_contour_index]<<'\n';
+		        	if(flag_whiteBlob == 0)
+		        	{
+		        		vanish_point.x  = mc.x;
+		        		vanish_point.y  = mc.y;
+		        		vanish_pub.publish(vanish_point);
+		        	}
+
+		        }
+				// grab contours
+				//biggestContour = contours[contours.size()-1];
+		        /// Get the moments
+
+				cv::imshow("HSLImage", hsv);
 
 
 		 cv::imshow(OPENCV_WINDOW,cv_ptr->image);
