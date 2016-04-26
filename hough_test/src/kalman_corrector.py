@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import rospy
-import roslib; roslib.load_manifest('technologicExploration')
+import roslib; roslib.load_manifest('hough_test')
 from geometry_msgs.msg import (
     PoseArray,
     PoseStamped,
@@ -26,7 +26,7 @@ def applyKalman():
     print(init_y)
     dt = 0.079
     p = rospy.Publisher("/corrected_centers", Pose2D)
-    p2 = rospy.Publisher("/measured_centers", Pose2D)
+  #  p2 = rospy.Publisher("/measured_centers", Pose2D)
     # Initialization of state matrices 
     X = np.array([[init_y], [init_x],[1],[1]])
     #print(X.shape)
