@@ -14,6 +14,7 @@ using namespace std;
 
 int hough_slider_max=250;
 int v_slider_max = 255;
+int minRad_slider_max = 200;
 int center_slider_max = 100;
 int canny1_slider_max=200;
 int canny2_slider_max=500;
@@ -21,7 +22,8 @@ int flag = 0;
 
 int Hough_slider=120;
 int v_slider = 182;
-int center_slider = 60;
+int minRad_slider = 90;
+int center_slider = 34;
 int CannyThres1=115;
 int CannyThres2=210;
 int first_image_frame=1;
@@ -59,12 +61,16 @@ public:
 		      //image_pub_ = it_.advertise("/codebridge/output_video", 1);
 		       cv::namedWindow(OPENCV_WINDOW);
 			   cv::namedWindow("HSLImage");
+			   cv::namedWindow("GrayImage");
+
 		    }
 
 	~codebridge()
 	     {
 	       cv::destroyWindow(OPENCV_WINDOW);
 		   cv::destroyWindow("HSLImage");
+		   cv::destroyWindow("GrayImage");
+
 	     }
 
 	void kalmanread(const geometry_msgs::Pose2D& msg)
@@ -122,8 +128,8 @@ public:
 	        */
 
 		//IMAGE SHARPENING
-		//GaussianBlur( cv_ptr->image,cv_ptr-> image, Size( 3, 3 ), 0, 0 );
-		GaussianBlur( cv_ptr->image,cv_ptr-> image, Size( 0,0 ), 3 , 3);
+		GaussianBlur( cv_ptr->image,cv_ptr-> image, Size( 3, 3 ), 0, 0 );
+		//GaussianBlur( cv_ptr->image,cv_ptr-> image, Size( 0,0 ), 3 , 3);
 		addWeighted( The_Vid, 1.5,  cv_ptr->image, -0.5, 0, cv_ptr->image);
 		normalize( cv_ptr->image, cv_ptr->image, 0, 255, NORM_MINMAX, -1, Mat() );
 		cvtColor( cv_ptr->image, gra, CV_BGR2GRAY );
@@ -145,9 +151,33 @@ public:
 		vector<Vec3f> circles;
 		createTrackbar( "Canny edge", "Manual Tuning", &Hough_slider, hough_slider_max);
 		createTrackbar( "Center Detection", "Manual Tuning", &center_slider, center_slider_max);
+		createTrackbar( "Minimum Radius", "Manual Tuning", &minRad_slider, minRad_slider_max);
+		cv::imshow("GrayImage", gra);
+
 
 		/// Apply the Hough Transform to find the circles
-		HoughCircles( gra, circles, CV_HOUGH_GRADIENT, 1, 50, Hough_slider,center_slider, 0, 0);
+		HoughCircles( gra, circles, CV_HOUGH_GRADIENT, 1, 50, Hough_slider,center_slider, minRad_slider, 200);
+		if(circles.size()>0)
+		{
+			Point center(cvRound(circles[0][0]), cvRound(circles[0][1]));
+			int radius = cvRound(circles[0][2]);
+			// circle center
+			circle( cv_ptr->image, center, 3, Scalar(0,255,255), -1, 8, 0 );
+			// circle outline
+			circle( cv_ptr->image, center, radius, Scalar(255,0,255), 3, 8, 0 );
+			cout<<"center:" <<center<<'\n';
+			cout<<"radius"<<radius<<'\n';
+			flag_whiteBlob = 1;
+			vanish_point.x  = center.x;
+			vanish_point.y  = center.y;
+			vanish_pub.publish(vanish_point);
+
+			//Kalman circle center
+			//circle( cv_ptr->image,Point(KC.y,KC.x), 3, Scalar(255,0,0), -1, 8, 0 );
+			// circle outline
+			circle( cv_ptr->image,Point(KC.y,KC.x), 5, Scalar(0,255,0), -1, 8, 0 );
+		}
+
 //void HoughCircles(InputArray image, OutputArray circles, int method, double dp, double minDist, double param1=100, double param2=100, int minRadius=0, int maxRadius=0 )
 		/*
 		 Parameters:
@@ -162,6 +192,16 @@ param2 – Second method-specific parameter. In case of CV_HOUGH_GRADIENT , it i
 minRadius – Minimum circle radius.
 maxRadius – Maximum circle radius.
 		 */
+		/// Draw the circles detected
+		/*for( size_t i = 0; i < circles.size(); i++ )
+		{
+			Point center1(cvRound(circles[i][0]), cvRound(circles[i][1]));
+		    int radius1 = cvRound(circles[i][2]);
+		    circle( cv_ptr->image, center1, 3, Scalar(0,255,255), -1,8,0);
+		    circle( cv_ptr->image, center1, radius1, Scalar(255,0,255), 3,8,0 );
+		}*/
+		/*
+		/*
 		if(circles.size()== 1)
 		{
 			//cout << "Number of circles: " << circles.size() << '\n';
@@ -317,7 +357,7 @@ maxRadius – Maximum circle radius.
 			//}
 			  */
 
-		}
+		//}
 		Mat conImg;
 				conImg = hsv.clone();
 				vector<vector<Point> > contours,biggestContour;
@@ -363,12 +403,12 @@ maxRadius – Maximum circle radius.
 		        	mc = Point2f( mu.m10/mu.m00 , mu.m01/mu.m00 );
 		        	circle( cv_ptr->image,mc, 3, Scalar(255,0,0), -1, 8, 0 );
 		        	//cout<<"cntr points"<<contours[largest_contour_index]<<'\n';
-		        	if(flag_whiteBlob == 0)
+		        	/*if(flag_whiteBlob == 0)
 		        	{
 		        		vanish_point.x  = mc.x;
 		        		vanish_point.y  = mc.y;
 		        		vanish_pub.publish(vanish_point);
-		        	}
+		        	}*/
 
 		        }
 				// grab contours
