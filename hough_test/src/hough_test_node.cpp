@@ -394,14 +394,14 @@ maxRadius – Maximum circle radius.
 
 		        if(largest_area > 8000)
 		        {
-		        	drawContours( cv_ptr->image, contours,largest_contour_index , Scalar(0,0,255), 3, 8, hierarchy,0 );
+		        	//drawContours( cv_ptr->image, contours,largest_contour_index , Scalar(0,0,255), 3, 8, hierarchy,0 );
 		        	cout<<"largestArea: "<<largest_area<<'\n';
 		        	Moments mu;
 		        	mu = moments( contours[largest_contour_index], false );
 		        	///  Get the mass centers:
 		        	Point2f mc;
 		        	mc = Point2f( mu.m10/mu.m00 , mu.m01/mu.m00 );
-		        	circle( cv_ptr->image,mc, 3, Scalar(255,0,0), -1, 8, 0 );
+		        	//circle( cv_ptr->image,mc, 3, Scalar(255,0,0), -1, 8, 0 );
 		        	//cout<<"cntr points"<<contours[largest_contour_index]<<'\n';
 		        	/*if(flag_whiteBlob == 0)
 		        	{
