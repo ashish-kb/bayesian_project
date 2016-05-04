@@ -7,6 +7,8 @@
 #include <sensor_msgs/image_encodings.h>
 #include <geometry_msgs/Pose2D.h>
 #include <math.h>
+#include <std_msgs/Header.h>
+#include <ardrone_autonomy/Navdata.h>
 
 
 using namespace cv;
@@ -36,6 +38,7 @@ float sampling_time=1.0;
 float cutoff_freq=1/0.04;
 float alpha;
 geometry_msgs::Pose2D KC;
+float rx,ry,rz;
 
 static const std::string OPENCV_WINDOW = "Image window";
 
@@ -46,6 +49,7 @@ class codebridge
 	image_transport::Subscriber image_sub_;
 	image_transport::Publisher image_pub_;
 	geometry_msgs::Pose2D vanish_point;
+	ros::Subscriber navdata;
 	ros::Publisher vanish_pub;
 	cv::VideoWriter writer_vanish;
 	ros::Subscriber center_kalman;
@@ -54,10 +58,11 @@ class codebridge
 public:
 	codebridge():it_(nh_)
             {
-		       // Subscrive to input video feed and publish output video feed
+		       // Subscribe to input video feed and publish output video feed
 		       image_sub_ = it_.subscribe("/ardrone/bottom/image_raw", 1,&codebridge::imageCb, this);
 		       vanish_pub = nh_.advertise<geometry_msgs::Pose2D>("/vanishing_point", 1);
 		       center_kalman = nh_.subscribe("/corrected_centers",1,&codebridge::kalmanread,this);
+		       navdata = nh_.subscribe("/ardrone/navdata",1, &codebridge::NavdataRead,this);
 		      //image_pub_ = it_.advertise("/codebridge/output_video", 1);
 		       cv::namedWindow(OPENCV_WINDOW);
 			   cv::namedWindow("HSLImage");
@@ -79,7 +84,76 @@ public:
 		KC.y = msg.y;
 
 	}
+	void NavdataRead(const ardrone_autonomy::Navdata& msg)
+	{
+		rx = msg.rotX;
+		ry = msg.rotY;
+		rz = msg.rotZ;
 
+	}
+
+	geometry_msgs::Pose2D rotate_optical(float ry, float rx, float rz)
+	{
+		geometry_msgs::Pose2D rotated_optical;
+		 // Rotation matrices around the X, Y, and Z axis
+		Mat RX = (Mat_<float>(3, 3) <<
+
+				  1,          0,           0,
+
+				  0, cos(rx), -sin(rx),
+
+				  0, sin(rx),  cos(rx)
+
+				  );
+
+		Mat RY = (Mat_<float>(3, 3) <<
+
+				  cos(ry), 0, -sin(ry),
+
+				  0, 1,          0,
+
+				  sin(ry), 0,  cos(ry)
+
+				  );
+
+		Mat RZ = (Mat_<float>(3, 3) <<
+
+				  1, 0, 0,
+
+				  0, 1, 0,
+
+				  0, 0, 1
+
+				  );
+
+		// Composed rotation matrix with (RX, RY, RZ)
+
+		Mat R = RY ;//RX * RY * RZ;
+		Mat T = (Mat_<float>(3, 1) <<
+
+			0,0,0);
+		Mat RT;
+		hconcat(R,T,RT);
+
+		Mat K = (Mat_<float>(3,3) <<
+		700.121029632528,	0	,298.516540740330,
+		0,	696.601823477884,	158.964996247924,
+		0,	0,	1);
+
+		Mat KRT;
+
+		Mat orig_optical = (Mat_<float>(4, 1) <<
+
+				298.516540740330,158.964996247924,698,1);
+		KRT = K * RT * orig_optical;
+		//cout << "KRT = "<< endl << " "  << KRT << endl << endl;
+		//cout<<"KRT at 0"<<KRT.at<float>(0,0)<<"KRT at 3"<<KRT.at<float>(3,0)<<endl;
+		rotated_optical.x =  KRT.at<float>(0,0)/KRT.at<float>(2,0);
+		rotated_optical.y = KRT.at<float>(1,0)/KRT.at<float>(2,0);
+
+		return rotated_optical;
+
+	  }
 
 	void imageCb(const sensor_msgs::ImageConstPtr& msg)
 	{
@@ -109,7 +183,7 @@ public:
 		 }
 
 
-		Mat gra,hsv, The_Vid;
+		Mat gra,hsv, The_Vid,warped;
 		The_Vid = cv_ptr->image.clone();
 		int flag_whiteBlob = 0;
 
@@ -154,9 +228,55 @@ public:
 		createTrackbar( "Minimum Radius", "Manual Tuning", &minRad_slider, minRad_slider_max);
 		cv::imshow("GrayImage", gra);
 
+		//cout<<"Rotations:"<<rx<<'\t'<<ry<<'\t'<<rz<<'\n';
+		int f = 2; // this is also configurable, f=2 should be about 50mm focal length
+
+		int h = gra.rows;
+		int w = gra.cols;
+
+		float cx = cosf(rx), sx = sinf(rx);
+		float cy = cosf(ry), sy = sinf(ry);
+		float cz = cosf(rz), sz = sinf(rz);
+		float roto[3][2] = { // last column not needed, our vector has z=0
+		    { cz * cy, cz * sy * sx - sz * cx },
+		    { sz * cy, sz * sy * sx + cz * cx },
+		    { -sy, cy * sx }
+		};
+		float pt[4][2] = {{ -w / 2, -h / 2 }, { w / 2, -h / 2 }, { w / 2, h / 2 }, { -w / 2, h / 2 }};
+		float ptt[4][2];
+		for (int i = 0; i < 4; i++) {
+		    float pz = pt[i][0] * roto[2][0] + pt[i][1] * roto[2][1];
+		    ptt[i][0] = w / 2 + (pt[i][0] * roto[0][0] + pt[i][1] * roto[0][1]) * f * h / (f * h + pz);
+		    ptt[i][1] = h / 2 + (pt[i][0] * roto[1][0] + pt[i][1] * roto[1][1]) * f * h / (f * h + pz);
+		}
+
+		cv::Mat in_pt = (cv::Mat_<float>(4, 2) << 0, 0, w, 0, w, h, 0, h);
+		cv::Mat out_pt = (cv::Mat_<float>(4, 2) << ptt[0][0], ptt[0][1],
+		    ptt[1][0], ptt[1][1], ptt[2][0], ptt[2][1], ptt[3][0], ptt[3][1]);
+
+		cv::Mat transform = cv::getPerspectiveTransform(in_pt, out_pt);
+		cv::Mat img_in = cv_ptr->image.clone();
+		//cv::warpPerspective(img_in, warped, transform, img_in.size());
+
+		/*float cameraMatrix[3][3]=
+		{{700.121029632528,	0	,298.516540740330},
+			{0,	696.601823477884,	158.964996247924},
+			{0,	0,	1}};
+		vector<float> distCoeffs;
+		distCoeffs = {0.139607627803272,-0.221471852536945,0,0,-1.24553513305009};
+
+
+        cv::undistort(img_in,warped,cameraMatrix,distCoeffs);*/
+
+
+	    geometry_msgs::Pose2D rot_opt_publish = rotate_optical(rx,ry,rz);
+	  //  cout << " rot_opt_x  " << rot_opt_publish.x << " rot_opt_y  " << rot_opt_publish.y << endl;
+	    // Apply matrix transformation
+
+	    //warpPerspective(img_in,warped, trans, img_in.size(), INTER_LANCZOS4);
 
 		/// Apply the Hough Transform to find the circles
-		HoughCircles( gra, circles, CV_HOUGH_GRADIENT, 1, 50, Hough_slider,center_slider, minRad_slider, 200);
+		HoughCircles( gra, circles, CV_HOUGH_GRADIENT, 1, 50, Hough_slider,center_slider, minRad_slider, 150);
 		if(circles.size()>0)
 		{
 			Point center(cvRound(circles[0][0]), cvRound(circles[0][1]));
@@ -165,7 +285,7 @@ public:
 			circle( cv_ptr->image, center, 3, Scalar(0,255,255), -1, 8, 0 );
 			// circle outline
 			circle( cv_ptr->image, center, radius, Scalar(255,0,255), 3, 8, 0 );
-			cout<<"center:" <<center<<'\n';
+			//cout<<"center:" <<center<<'\n';
 			cout<<"radius"<<radius<<'\n';
 			flag_whiteBlob = 1;
 			vanish_point.x  = center.x;
@@ -394,14 +514,14 @@ maxRadius – Maximum circle radius.
 
 		        if(largest_area > 8000)
 		        {
-		        	//drawContours( cv_ptr->image, contours,largest_contour_index , Scalar(0,0,255), 3, 8, hierarchy,0 );
-		        	cout<<"largestArea: "<<largest_area<<'\n';
+		        	drawContours( cv_ptr->image, contours,largest_contour_index , Scalar(0,0,255), 3, 8, hierarchy,0 );
+		        	//cout<<"largestArea: "<<largest_area<<'\n';
 		        	Moments mu;
 		        	mu = moments( contours[largest_contour_index], false );
 		        	///  Get the mass centers:
 		        	Point2f mc;
 		        	mc = Point2f( mu.m10/mu.m00 , mu.m01/mu.m00 );
-		        	//circle( cv_ptr->image,mc, 3, Scalar(255,0,0), -1, 8, 0 );
+		        	circle( cv_ptr->image,mc, 3, Scalar(255,0,0), -1, 8, 0 );
 		        	//cout<<"cntr points"<<contours[largest_contour_index]<<'\n';
 		        	/*if(flag_whiteBlob == 0)
 		        	{
@@ -414,8 +534,9 @@ maxRadius – Maximum circle radius.
 				// grab contours
 				//biggestContour = contours[contours.size()-1];
 		        /// Get the moments
+		        /// Detector parameters
 
-				cv::imshow("HSLImage", hsv);
+		       cv::imshow("HSLImage", hsv);
 
 
 		 cv::imshow(OPENCV_WINDOW,cv_ptr->image);
@@ -833,7 +954,7 @@ int main(int argc, char** argv)
 	 ros::init(argc, argv, "hough_test");
 	 codebridge ic;
 	 ros::spin();
-	 cout<<"number of goodC 3"<<flag<<'\n';
+	 //cout<<"number of goodC 3"<<flag<<'\n';
 	 return 0;
 }
 
